@@ -661,6 +661,7 @@ class PythonVirtualenvOperator(_BasePythonVirtualenvOperator):
     :param use_dill: Deprecated, use ``serializer`` instead. Whether to use dill to serialize
         the args and result (pickle is default). This allows more complex types
         but requires you to include dill in your requirements.
+    :param use_airflow_context: Whether to provide ``get_current_context()`` to the python_callable.
     """
 
     template_fields: Sequence[str] = tuple(
@@ -687,6 +688,7 @@ class PythonVirtualenvOperator(_BasePythonVirtualenvOperator):
         index_urls: None | Collection[str] | str = None,
         venv_cache_path: None | os.PathLike[str] = None,
         use_dill: bool = False,
+        use_airflow_context: bool = False,
         **kwargs,
     ):
         if (
@@ -735,6 +737,7 @@ class PythonVirtualenvOperator(_BasePythonVirtualenvOperator):
             expect_airflow=expect_airflow,
             skip_on_exit_code=skip_on_exit_code,
             use_dill=use_dill,
+            use_airflow_context=use_airflow_context,
             **kwargs,
         )
 
