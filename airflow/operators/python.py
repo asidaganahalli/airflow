@@ -55,7 +55,7 @@ from airflow.utils.context import context_copy_partial, context_get_outlet_event
 from airflow.utils.file import get_unique_dag_module_name
 from airflow.utils.operator_helpers import ExecutionCallableRunner, KeywordParameters
 from airflow.utils.process_utils import execute_in_subprocess
-from airflow.utils.python_virtualenv import prepare_virtualenv, write_python_script
+from airflow.utils.python_virtualenv import context_to_json, prepare_virtualenv, write_python_script
 
 log = logging.getLogger(__name__)
 
@@ -440,6 +440,7 @@ class _BasePythonVirtualenvOperator(PythonOperator, metaclass=ABCMeta):
         expect_airflow: bool = True,
         skip_on_exit_code: int | Container[int] | None = None,
         use_dill: bool = False,
+        use_airflow_context: bool = False,
         **kwargs,
     ):
         if (
@@ -490,6 +491,7 @@ class _BasePythonVirtualenvOperator(PythonOperator, metaclass=ABCMeta):
             if skip_on_exit_code is not None
             else []
         )
+        self.use_airflow_context = use_airflow_context
 
     @abstractmethod
     def _iter_serializable_context_keys(self):
@@ -536,6 +538,7 @@ class _BasePythonVirtualenvOperator(PythonOperator, metaclass=ABCMeta):
             string_args_path = tmp_dir / "string_args.txt"
             script_path = tmp_dir / "script.py"
             termination_log_path = tmp_dir / "termination.log"
+            airflow_context_path = tmp_dir / "airflow_context.json"
 
             self._write_args(input_path)
             self._write_string_args(string_args_path)
@@ -547,6 +550,7 @@ class _BasePythonVirtualenvOperator(PythonOperator, metaclass=ABCMeta):
                 "pickling_library": self.serializer,
                 "python_callable": self.python_callable.__name__,
                 "python_callable_source": self.get_python_source(),
+                "use_airflow_context": self.use_airflow_context,
             }
 
             if inspect.getfile(self.python_callable) == self.dag.fileloc:
@@ -557,6 +561,11 @@ class _BasePythonVirtualenvOperator(PythonOperator, metaclass=ABCMeta):
                 filename=os.fspath(script_path),
                 render_template_as_native_obj=self.dag.render_template_as_native_obj,
             )
+            if self.use_airflow_context:
+                context = get_current_context()
+                with airflow_context_path.open("w+") as file:
+                    json_text = context_to_json(context)
+                    file.write(json_text)
 
             try:
                 execute_in_subprocess(
@@ -567,6 +576,7 @@ class _BasePythonVirtualenvOperator(PythonOperator, metaclass=ABCMeta):
                         os.fspath(output_path),
                         os.fspath(string_args_path),
                         os.fspath(termination_log_path),
+                        os.fspath(airflow_context_path),
                     ]
                 )
             except subprocess.CalledProcessError as e:
