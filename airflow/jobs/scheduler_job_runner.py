@@ -2056,7 +2056,7 @@ class SchedulerJobRunner(BaseJobRunner, LoggingMixin):
         An orphaned dataset is no longer referenced in any DAG schedule parameters or task outlets.
         """
         orphaned_dataset_query = session.scalars(
-            select(DatasetModel)
+            select(DatasetModel.id)
             .join(
                 DagScheduleDatasetReference,
                 isouter=True,
