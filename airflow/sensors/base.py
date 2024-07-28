@@ -39,7 +39,7 @@ from airflow.exceptions import (
     AirflowSensorTimeout,
     AirflowSkipException,
     AirflowTaskTimeout,
-    RemovedInAirflow3Warning,
+    RemovedInAirflow3SoftWarning,
     TaskDeferralError,
 )
 from airflow.executors.executor_loader import ExecutorLoader
@@ -209,6 +209,20 @@ class BaseSensorOperator(BaseOperator, SkipMixin):
         self.mode = mode
         self.exponential_backoff = exponential_backoff
         self.max_wait = self._coerce_max_wait(max_wait)
+        if soft_fail:
+            warnings.warn(
+                "`soft_fail` is deprecated and will be removed in a future version. "
+                "Please provide fail_policy=FailPolicy.skip_on_timeout instead.",
+                RemovedInAirflow3SoftWarning,
+                stacklevel=3,
+            )
+        elif silent_fail:
+            warnings.warn(
+                "`silent_fail` is deprecated and will be removed in a future version. "
+                "Please provide fail_policy=FailPolicy.IGNORE_ERRORS instead.",
+                RemovedInAirflow3SoftWarning,
+                stacklevel=3,
+            )
         if fail_policy != NOTSET:
             if sum([soft_fail, silent_fail]) > 0:
                 raise ValueError(
