@@ -23,16 +23,21 @@ import pytest
 
 from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.providers.amazon.aws.sensors.emr import EmrServerlessApplicationSensor
+from tests.test_utils.compat import AIRFLOW_V_2_10_PLUS, ignore_provider_compatibility_error
+
+with ignore_provider_compatibility_error("2.10.0", __file__):
+    from airflow.sensors.base import FailPolicy
 
 
 class TestEmrServerlessApplicationSensor:
-    def setup_method(self):
+    def setup_method(self, fail_policy):
         self.app_id = "vzwemreks"
         self.job_run_id = "job1234"
         self.sensor = EmrServerlessApplicationSensor(
             task_id="test_emrcontainer_sensor",
             application_id=self.app_id,
             aws_conn_id="aws_default",
+            fail_policy=fail_policy,
         )
 
     def set_get_application_return_value(self, return_value: dict[str, str]):
@@ -77,9 +82,12 @@ class TestPokeRaisesAirflowException(TestEmrServerlessApplicationSensor):
         self.assert_get_application_was_called_once_with_app_id()
 
 
+@pytest.mark.skipif(not AIRFLOW_V_2_10_PLUS, reason="FailPolicy present from Airflow 2.10.0")
 class TestPokeRaisesAirflowSkipException(TestEmrServerlessApplicationSensor):
+    def setup_method(self, fail_policy=None):
+        super().setup_method(FailPolicy.SKIP_ON_TIMEOUT)
+
     def test_when_state_is_failed_and_soft_fail_is_true_poke_should_raise_skip_exception(self):
-        self.sensor.soft_fail = True
         self.set_get_application_return_value(
             {"application": {"state": "STOPPED", "stateDetails": "mock stopped"}}
         )

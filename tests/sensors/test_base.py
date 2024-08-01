@@ -27,6 +27,7 @@ import time_machine
 from airflow.exceptions import (
     AirflowException,
     AirflowFailException,
+    AirflowPokeFailException,
     AirflowRescheduleException,
     AirflowSensorTimeout,
     AirflowSkipException,
@@ -52,6 +53,10 @@ from airflow.providers.celery.executors.celery_kubernetes_executor import Celery
 from airflow.providers.cncf.kubernetes.executors.kubernetes_executor import KubernetesExecutor
 from airflow.providers.cncf.kubernetes.executors.local_kubernetes_executor import LocalKubernetesExecutor
 from airflow.sensors.base import BaseSensorOperator, PokeReturnValue, poke_mode_only
+from tests.test_utils.compat import AIRFLOW_V_2_10_PLUS, ignore_provider_compatibility_error
+
+with ignore_provider_compatibility_error("2.10.0", __file__):
+    from airflow.sensors.base import FailPolicy
 from airflow.ti_deps.deps.ready_to_reschedule import ReadyToRescheduleDep
 from airflow.utils import timezone
 from airflow.utils.session import create_session
@@ -95,7 +100,7 @@ class DummyAsyncSensor(BaseSensorOperator):
         self.return_value = return_value
 
     def execute_complete(self, context, event=None):
-        raise AirflowException("Should be skipped")
+        raise AirflowException()
 
 
 class DummySensorWithXcomValue(BaseSensorOperator):
@@ -178,8 +183,9 @@ class TestBaseSensor:
             if ti.task_id == DUMMY_OP:
                 assert ti.state == State.NONE
 
-    def test_soft_fail(self, make_sensor):
-        sensor, dr = make_sensor(False, soft_fail=True)
+    @pytest.mark.skipif(not AIRFLOW_V_2_10_PLUS, reason="FailPolicy present from Airflow 2.10.0")
+    def test_skip_on_timeout(self, make_sensor):
+        sensor, dr = make_sensor(False, fail_policy=FailPolicy.SKIP_ON_TIMEOUT)
 
         self._run(sensor)
         tis = dr.get_task_instances()
@@ -190,12 +196,13 @@ class TestBaseSensor:
             if ti.task_id == DUMMY_OP:
                 assert ti.state == State.NONE
 
+    @pytest.mark.skipif(not AIRFLOW_V_2_10_PLUS, reason="FailPolicy present from Airflow 2.10.0")
     @pytest.mark.parametrize(
         "exception_cls",
         (ValueError,),
     )
-    def test_soft_fail_with_exception(self, make_sensor, exception_cls):
-        sensor, dr = make_sensor(False, soft_fail=True)
+    def test_skip_on_timeout_with_exception(self, make_sensor, exception_cls):
+        sensor, dr = make_sensor(False, fail_policy=FailPolicy.SKIP_ON_TIMEOUT)
         sensor.poke = Mock(side_effect=[exception_cls(None)])
         with pytest.raises(ValueError):
             self._run(sensor)
@@ -208,16 +215,17 @@ class TestBaseSensor:
             if ti.task_id == DUMMY_OP:
                 assert ti.state == State.NONE
 
+    @pytest.mark.skipif(not AIRFLOW_V_2_10_PLUS, reason="FailPolicy present from Airflow 2.10.0")
     @pytest.mark.parametrize(
         "exception_cls",
         (
             AirflowSensorTimeout,
             AirflowTaskTimeout,
-            AirflowFailException,
+            AirflowPokeFailException,
         ),
     )
-    def test_soft_fail_with_skip_exception(self, make_sensor, exception_cls):
-        sensor, dr = make_sensor(False, soft_fail=True)
+    def test_skip_on_timeout_with_skip_exception(self, make_sensor, exception_cls):
+        sensor, dr = make_sensor(False, fail_policy=FailPolicy.SKIP_ON_TIMEOUT)
         sensor.poke = Mock(side_effect=[exception_cls(None)])
 
         self._run(sensor)
@@ -229,12 +237,13 @@ class TestBaseSensor:
             if ti.task_id == DUMMY_OP:
                 assert ti.state == State.NONE
 
+    @pytest.mark.skipif(not AIRFLOW_V_2_10_PLUS, reason="FailPolicy present from Airflow 2.10.0")
     @pytest.mark.parametrize(
         "exception_cls",
-        (AirflowSensorTimeout, AirflowTaskTimeout, AirflowFailException, Exception),
+        (AirflowSensorTimeout, AirflowTaskTimeout, AirflowFailException, AirflowPokeFailException, Exception),
     )
-    def test_never_fail_with_skip_exception(self, make_sensor, exception_cls):
-        sensor, dr = make_sensor(False, never_fail=True)
+    def test_skip_on_any_error_with_skip_exception(self, make_sensor, exception_cls):
+        sensor, dr = make_sensor(False, fail_policy=FailPolicy.SKIP_ON_ANY_ERROR)
         sensor.poke = Mock(side_effect=[exception_cls(None)])
 
         self._run(sensor)
@@ -246,9 +255,13 @@ class TestBaseSensor:
             if ti.task_id == DUMMY_OP:
                 assert ti.state == State.NONE
 
-    def test_soft_fail_with_retries(self, make_sensor):
+    @pytest.mark.skipif(not AIRFLOW_V_2_10_PLUS, reason="FailPolicy present from Airflow 2.10.0")
+    def test_skip_on_timeout_with_retries(self, make_sensor):
         sensor, dr = make_sensor(
-            return_value=False, soft_fail=True, retries=1, retry_delay=timedelta(milliseconds=1)
+            return_value=False,
+            fail_policy=FailPolicy.SKIP_ON_TIMEOUT,
+            retries=1,
+            retry_delay=timedelta(milliseconds=1),
         )
 
         # first run times out and task instance is skipped
@@ -356,9 +369,14 @@ class TestBaseSensor:
         assert sensor_ti.state == State.FAILED
         assert dummy_ti.state == State.NONE
 
-    def test_soft_fail_with_reschedule(self, make_sensor, time_machine, session):
+    @pytest.mark.skipif(not AIRFLOW_V_2_10_PLUS, reason="FailPolicy present from Airflow 2.10.0")
+    def test_skip_on_timeout_with_reschedule(self, make_sensor, time_machine, session):
         sensor, dr = make_sensor(
-            return_value=False, poke_interval=10, timeout=5, soft_fail=True, mode="reschedule"
+            return_value=False,
+            poke_interval=10,
+            timeout=5,
+            fail_policy=FailPolicy.SKIP_ON_TIMEOUT,
+            mode="reschedule",
         )
 
         def _get_tis():
@@ -876,6 +894,7 @@ class TestBaseSensor:
         assert sensor_ti.max_tries == 4
         assert sensor_ti.state == State.FAILED
 
+    @pytest.mark.skipif(not AIRFLOW_V_2_10_PLUS, reason="FailPolicy present from Airflow 2.10.0")
     def test_reschedule_and_retry_timeout_and_silent_fail(self, make_sensor, time_machine, session):
         """
         Test mode="reschedule", silent_fail=True then retries and timeout configurations interact correctly.
@@ -910,7 +929,7 @@ class TestBaseSensor:
             retries=2,
             retry_delay=timedelta(seconds=3),
             mode="reschedule",
-            silent_fail=True,
+            fail_policy=FailPolicy.IGNORE_ERROR,
         )
 
         def _get_sensor_ti():
@@ -1109,15 +1128,17 @@ class TestPokeModeOnly:
 
 
 class TestAsyncSensor:
+    @pytest.mark.skipif(not AIRFLOW_V_2_10_PLUS, reason="FailPolicy present from Airflow 2.10.0")
     @pytest.mark.parametrize(
-        "soft_fail, expected_exception",
+        "fail_policy, expected_exception",
         [
-            (True, AirflowSkipException),
-            (False, AirflowException),
+            (FailPolicy.SKIP_ON_TIMEOUT, AirflowException),
+            (FailPolicy.SKIP_ON_ANY_ERROR, AirflowSkipException),
+            (FailPolicy.NONE, AirflowException),
         ],
     )
-    def test_fail_after_resuming_deferred_sensor(self, soft_fail, expected_exception):
-        async_sensor = DummyAsyncSensor(task_id="dummy_async_sensor", soft_fail=soft_fail)
+    def test_fail_after_resuming_deferred_sensor(self, fail_policy, expected_exception):
+        async_sensor = DummyAsyncSensor(task_id="dummy_async_sensor", fail_policy=fail_policy)
         ti = TaskInstance(task=async_sensor)
         ti.next_method = "execute_complete"
         with pytest.raises(expected_exception):
