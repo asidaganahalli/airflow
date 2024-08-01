@@ -30,7 +30,6 @@ const taskLogApi = getMetaValue("task_log_api");
 interface Props extends API.GetLogVariables {
   state?: TaskInstance["state"];
 }
-
 const useTaskLog = ({
   dagId,
   dagRunId,
@@ -39,6 +38,7 @@ const useTaskLog = ({
   mapIndex,
   fullContent = false,
   state,
+  limit = 9000,
 }: Props) => {
   let url: string = "";
   const [isPreviousStatePending, setPrevState] = useState(true);
@@ -65,12 +65,25 @@ const useTaskLog = ({
   const expectingLogs = isStatePending || isPreviousStatePending;
 
   return useQuery(
-    ["taskLogs", dagId, dagRunId, taskId, mapIndex, taskTryNumber, fullContent],
+    [
+      "taskLogs",
+      dagId,
+      dagRunId,
+      taskId,
+      mapIndex,
+      taskTryNumber,
+      fullContent,
+      limit,
+    ],
     () => {
       setPrevState(isStatePending);
       return axios.get<AxiosResponse, string>(url, {
         headers: { Accept: "text/plain" },
-        params: { map_index: mapIndex, full_content: fullContent },
+        params: {
+          map_index: mapIndex,
+          full_content: fullContent,
+          limit,
+        },
       });
     },
     {
